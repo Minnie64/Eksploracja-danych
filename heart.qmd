@@ -1,0 +1,553 @@
+---
+title: "Projekt z eksploracji "
+format: 
+  html:
+    code-fold: true
+    code-summary: "Pokaż kod"
+echo: true
+self-contained: true
+warning: false
+message: false
+editor: visual
+---
+
+```{r biblioteki, echo=FALSE }
+library(flextable)
+library(tidymodels)
+library(janitor)
+library(ggplot2)
+library(ggcorrplot)
+library(themis)
+library(gt)
+```
+
+```{r dane, echo=F}
+heart <- read.csv("heart_dataset.csv")
+heart <- heart %>%
+  clean_names()
+```
+
+## Cel badania
+
+Celem badania jest zbudowanie modelu klasyfikującego, który na podstawie cech klinicznych będzie przewidywać czy pacjent z niewydolnością serca umrze w okresie obserwacji.
+
+## Opis zbioru danych
+
+`age` - wiek pacjenta
+
+`anaemia` - zmienna binarna opisująca czy pacjent ma anemię, czyli czy liczba czerwonych krwinek jest zmniejszona
+
+`creatinine_phosphokinase` - zmienna ilościowa oznaczająca poziom enzymu CPK (kinazy fosfokreatynowej) we krwi (mcg/l), jej wysoki poziom może sugerować niewydolność serca lub ranę
+
+`diabetes` - zmienna binarna opisująca czy pacjent choruje na cukrzycę
+
+`ejection_fraction` - procent objętości wypompowywanej krwi z komory serca w czasie skurczu
+
+`high_blood_pressure` - zmienna binarna oznaczająca czy pacjent ma nadciśnienie
+
+`platelets` - zmienna opisująca ilość płytek krwi u pacjenta
+
+`sex` - zmienna binarna oznaczająca płeć pacjenta przyjmująca dwa poziomy:
+
+-   0 - kobieta
+
+-   1 - mężczyna
+
+`serum_creatinine` - zmienna ilościowa opisująca poziom kreatyniny we krwi, jej wysoki poziom może sugerować zaburzenie czynności nerek
+
+`serum_sodium` - zmienna ilościowa opisująca stężenie sodu we krwi, nieprawidłowe poziomy mogą wskazywać na niewydolność serca
+
+`smoking` - zmienna binarna opisująca czy pacjent pali
+
+`time` - zmienna ilościowa oznaczająca okres obserwacji pacjenta liczony w dniach
+
+`death_event`- zmienna binarna czy pacjent zmarł w okresie obserwacji, również zmienna zależna przyjmująca dwa poziomy:
+
+-   0 - pacjent przeżył
+
+-   1 - pacjent nie przeżył
+
+```{r}
+#| label: tbl-head
+#| tbl-cap: Początkowe wartości ze zbioru
+flextable(head(heart)) %>%
+  theme_zebra()
+```
+
+## Przygotowanie zbioru
+
+Zbiór nie zawierał żadnych braków danych, jednakże konieczne było dostosowanie typów poszczególnych kolumn.
+
+```{r factory, echo=F}
+heart$anaemia <- as.factor(heart$anaemia)
+heart$high_blood_pressure <- as.factor(heart$high_blood_pressure)
+heart$diabetes <- as.factor(heart$diabetes)
+heart$sex <- as.factor(heart$sex)
+heart$smoking <- as.factor(heart$smoking)
+heart$death_event <- as.factor(heart$death_event)
+heart$age <- as.integer(heart$age) 
+```
+
+```{r NA, echo=F}
+nrow(heart[!complete.cases(heart),])
+apply(heart, 1, function(x) sum(is.na(x)))
+```
+
+## Wizualizacja zbioru
+
+```{r}
+heart %>%
+  ggplot(aes(x = death_event)) + 
+  geom_bar(fill = "#D1CBC2") + 
+  labs(x = " ", y = "Liczba pacjentów") + 
+  scale_x_discrete(labels = c("0" = "Przeżył", "1" = "Nie przeżył")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>%
+  ggplot(aes(x = sex, fill = death_event)) + 
+  geom_bar() + 
+  labs(x = "", y = "Liczebność", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  scale_x_discrete(labels = c("0" = "Kobieta", "1" = "Męzczyzna")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>% 
+  ggplot(aes(x = age, fill = death_event)) + 
+  geom_histogram(bins = 20) +
+  labs(x = "Wiek", y = "Liczebność", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>%
+  ggplot(aes(x = smoking, fill = death_event)) + 
+  geom_bar() + 
+  labs(x = "", y = "Liczebność", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  scale_x_discrete(labels = c("0" = "Niepalący", "1" = "Palący")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>%
+  ggplot(aes(x = anaemia, fill = death_event)) + 
+  geom_bar() + 
+  labs(x = "", y = "Liczebność", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  scale_x_discrete(labels = c("0" = "Brak anemii", "1" = "Anemia")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>%
+  ggplot(aes(x = diabetes, fill = death_event)) + 
+  geom_bar() + 
+  labs(x = "", y = "Liczebność", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  scale_x_discrete(labels = c("0" = "Brak cukrzycy", "1" = "Cukrzyca")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>%
+  ggplot(aes(x = high_blood_pressure, fill = death_event)) + 
+  geom_bar() + 
+  labs(x = "", y = "Liczebność", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  scale_x_discrete(labels = c("0" = "Brak nadciśnienia", "1" = "Nadciśnienie")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>% 
+  ggplot(aes(x = creatinine_phosphokinase, fill = death_event)) + 
+  geom_histogram(bins = 20) +
+  labs(x = "Ilość enzymu CPK we krwi", y = "", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>% 
+  ggplot(aes(x = ejection_fraction, fill = death_event)) + 
+  geom_histogram(bins = 20) +
+  labs(x = "Procent wypompowywanej krwi", y = "", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>% 
+  ggplot(aes(x = platelets/1000, fill = death_event)) + 
+  geom_histogram(bins = 20) +
+  labs(x = "Ilość płytek krwi (w tys)", y = "", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  theme_minimal() 
+```
+
+```{r}
+heart %>% 
+  ggplot(aes(x = serum_creatinine, fill = death_event)) + 
+  geom_histogram(bins = 20) +
+  labs(x = "Ilość kreatyniny we krwi", y = "", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>% 
+  ggplot(aes(x = serum_sodium, fill = death_event)) + 
+  geom_histogram(bins = 20) +
+  labs(x = "Ilość sodu we krwi", y = "", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  theme_minimal()
+```
+
+```{r}
+heart %>% 
+  ggplot(aes(x = time, fill = death_event)) + 
+  geom_histogram(bins = 20) +
+  labs(x = "Dni obserwacji pacjenta", y = "Liczebność", fill = " ") + 
+  scale_fill_manual(labels = c("Przeżył", "Nie przeżył"), values = c("#D1CBC2", "#5D9E9C")) + 
+  theme_minimal()
+```
+
+### Modelowanie
+
+Wybranymi przeze mnie metodami klasyfikacji pacjentów są modele:
+
+-   regresji logistycznej z silnikiem `glmnet`
+
+-   lasu losowego z silnikiem `ranger`
+
+-   boosting z silnikiem `xgboost`
+
+-   drzewa decyzyjnego z silnikiem `rpart`
+
+-   SVM z silnikiem `kernlab`
+
+Najpierw jednak sprawdzę liczebność obserwacji w grupach zmiennej objaśnianej `death_event`.
+
+```{r}
+#| label: tbl-de_liczebnosc
+#| tbl-cap: Liczebność poziomów zmiennej zależnej 
+count(heart, death_event) |> 
+  flextable()
+```
+
+W tabeli @tbl-de_liczebnosc wyraźnie widać, że zmienna jest niezrównoważona, dlatego konieczne będzie przeprowadzenie upsamplingu.
+
+#### Podział na zbiór uczący i testowy
+
+```{r}
+h_split <- initial_split(heart, prop = .7)
+h_train <- training(h_split)
+h_test <- testing(h_split)
+```
+
+```{r, eval=FALSE}
+#dla boostingu
+bt_rec <- recipe(death_event~., data = h_train) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_corr(all_numeric_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_upsample(death_event)
+
+#dla drzewa decyzyjnego
+
+dt_rec <- recipe(death_event~., data = h_train) %>% 
+  step_corr(all_numeric_predictors()) %>%
+  step_upsample(death_event)
+
+#dla regresji logistycznej 
+
+lr_rec <- recipe(death_event~., data = h_train) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>%
+  step_corr(all_numeric_predictors()) %>% 
+  step_upsample(death_event)
+
+#dla SVM
+svm_rec <- recipe(death_event~., data = h_train) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_corr(all_numeric_predictors()) %>%
+  step_normalize(all_numeric_predictors()) %>% 
+  step_YeoJohnson(all_numeric_predictors()) %>%
+  step_upsample(death_event)
+
+#dla lasu losowego 
+rf_rec <- recipe(death_event~., data = h_train) %>%
+  step_zv(all_predictors()) %>%
+  step_corr(all_numeric_predictors()) %>%
+  step_upsample(death_event)
+```
+
+#### Boosting
+
+```{r, eval= FALSE}
+h_boost <- boost_tree(mode = "classification", tree_depth = tune(), 
+                      trees = tune(), learn_rate = tune(),
+                      mtry = tune(), min_n = tune(), loss_reduction = tune(),
+                      sample_size = tune(), stop_iter = tune()) %>%
+  set_engine("xgboost")
+    
+control <- control_grid(save_pred = T)
+folds <- vfold_cv(h_train, v = 10, repeats = 5)
+metrics <- metric_set(bal_accuracy)
+
+
+bt_wflow <- workflow() %>%
+  add_recipe(bt_rec) %>%
+  add_model(h_boost)
+
+bt_param <- bt_wflow %>%
+  extract_parameter_set_dials() %>%
+  update(mtry = mtry(c(1,12)))
+
+bt_grid <- grid_regular(bt_param, levels = 2)
+
+bt_tuning <- tune_grid(object = bt_wflow, grid = bt_grid, 
+                       resamples = folds, metrics = metrics, 
+                       control = control, param_info = bt_param 
+)
+
+boost_best <- show_best(bt_tuning, metric = "bal_accuracy")
+fin_b_wflow <- finalize_workflow(bt_wflow, boost_best[1,])
+boost_flow <- fit(fin_b_wflow, data = h_train)
+pred_boost <- predict(boost_flow, h_test)
+matrix_boost <- pred_boost %>%
+  bind_cols(h_test) %>%
+  conf_mat(truth = death_event, estimate = .pred_class)
+
+```
+
+```{r, eval=FALSE, echo=FALSE}
+saveRDS(matrix_boost, file = "matrix_boost.rds")
+saveRDS(boost_best, file = "boost_best.rds")
+```
+
+```{r, echo=FALSE}
+matrix_boost <- readRDS("matrix_boost.rds")
+boost_bt <- readRDS("boost_best.rds")
+```
+
+#### Drzewo decyzyjne
+
+```{r, eval= FALSE}
+h_dt <- decision_tree(tree_depth = tune(), min_n = tune(), 
+                      cost_complexity = tune()) %>%
+  set_engine("rpart") %>%
+  set_mode("classification")
+
+dt_wflow <- workflow() %>%
+  add_recipe(dt_rec) %>%
+  add_model(h_dt)
+
+dt_param <- dt_wflow %>%
+  extract_parameter_set_dials()
+
+dt_grid <- grid_regular(dt_param, levels = 3)
+
+dt_tuning <- tune_grid(object = dt_wflow, grid = dt_grid, 
+                       resamples = folds, metrics = metrics, 
+                       control = control, param_info = dt_param 
+)
+
+dt_best <- show_best(dt_tuning, metric = "bal_accuracy")
+fin_dt_wflow <- finalize_workflow(dt_wflow, dt_best[1,])
+dt_flow <- fit(fin_dt_wflow, data = h_train)
+pred_dt <- predict(dt_flow, h_test)
+matrix_dt <- pred_dt %>%
+  bind_cols(h_test) %>%
+  conf_mat(truth = death_event, estimate = .pred_class)
+```
+
+```{r,eval= FALSE, echo=FALSE}
+saveRDS(matrix_dt, file = "matrix_dt.rds")
+saveRDS(dt_best, file = "dt_best.rds")
+```
+
+```{r, echo=FALSE}
+matrix_dt <- readRDS("matrix_dt.rds")
+dt_bt <- readRDS("dt_best.rds")
+```
+
+#### Regresja logistyczna
+
+```{r, eval= FALSE}
+h_lr <- logistic_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet") 
+
+lr_wflow <- workflow() %>%
+  add_recipe(lr_rec) %>%
+  add_model(h_lr)
+
+lr_param <- lr_wflow %>%
+  extract_parameter_set_dials()
+
+lr_grid <- grid_regular(lr_param, levels = 3)
+
+lr_tuning <- tune_grid(object = lr_wflow, grid = lr_grid, 
+                       resamples = folds, metrics = metrics, 
+                       control = control, param_info = lr_param )
+
+lr_best <- show_best(lr_tuning, metric = "bal_accuracy")
+fin_lr_wflow <- finalize_workflow(lr_wflow, lr_best[1,])
+lr_flow <- fit(fin_lr_wflow, data = h_train)
+pred_lr <- predict(lr_flow, h_test)
+matrix_lr <- pred_lr %>%
+  bind_cols(h_test) %>%
+  conf_mat(truth = death_event, estimate = .pred_class)
+```
+
+```{r, eval= FALSE, echo=FALSE}
+saveRDS(matrix_lr, file = "matrix_lr.rds")
+saveRDS(lr_best, file = "lr_best.rds")
+```
+
+```{r, echo=FALSE}
+matrix_lr <- readRDS("matrix_lr.rds")
+lr_bt <- readRDS("lr_best.rds")
+```
+
+#### SVM
+
+```{r, eval= FALSE}
+h_svm <- svm_linear(cost = tune(), margin = tune()) %>%
+  set_engine("kernlab") %>%
+  set_mode("classification")
+
+svm_wflow <- workflow() %>%
+  add_recipe(svm_rec) %>%
+  add_model(h_svm)
+
+svm_param <- svm_wflow %>%
+  extract_parameter_set_dials()
+
+svm_grid <- grid_regular(svm_param, levels = 2)
+
+svm_tuning <- tune_grid(object = svm_wflow, grid = svm_grid, 
+                       resamples = folds, metrics = metrics, 
+                       control = control, param_info = svm_param )
+
+svm_best <- show_best(svm_tuning, metric = "bal_accuracy")
+fin_svm_wflow <- finalize_workflow(svm_wflow, svm_best[1,])
+svm_flow <- fit(fin_svm_wflow, data = h_train)
+pred_svm <- predict(svm_flow, h_test)
+matrix_svm <- pred_svm %>%
+  bind_cols(h_test) %>%
+  conf_mat(truth = death_event, estimate = .pred_class)
+```
+
+```{r, eval= FALSE, echo=FALSE}
+saveRDS(matrix_svm, file = "matrix_svm.rds")
+saveRDS(svm_best, file = "svm_best.rds")
+```
+
+```{r, echo=FALSE}
+matrix_svm <- readRDS("matrix_svm.rds")
+svm_bt <- readRDS("svm_best.rds")
+```
+
+#### Drzewo losowe
+
+```{r, eval= FALSE}
+h_rf <- rand_forest(mtry = tune(),trees = tune(), min_n = tune()) %>%
+                        set_engine("ranger") %>%
+                        set_mode("classification")
+
+rf_wflow <- workflow() %>%
+  add_recipe(rf_rec) %>%
+  add_model(h_rf)
+
+rf_param <- rf_wflow %>%
+  extract_parameter_set_dials()  %>%
+  update(mtry = mtry(c(1,12)))
+
+rf_grid <- grid_regular(rf_param, levels = 3)
+
+rf_tuning <- tune_grid(object = rf_wflow, grid = rf_grid, 
+                       resamples = folds, metrics = metrics, 
+                       control = control, param_info = rf_param )
+
+rf_best <- show_best(rf_tuning, metric = "bal_accuracy")
+fin_rf_wflow <- finalize_workflow(rf_wflow, rf_best[1,])
+rf_flow <- fit(fin_rf_wflow, data = h_train)
+pred_rf <- predict(rf_flow, h_test)
+matrix_rf <- pred_rf %>%
+  bind_cols(h_test) %>%
+  conf_mat(truth = death_event, estimate = .pred_class)
+```
+
+```{r,eval= FALSE, echo=FALSE}
+saveRDS(matrix_rf, file = "matrix_rf.rds")
+saveRDS(rf_best, file = "rf_best.rds")
+```
+
+```{r, echo=FALSE}
+matrix_rf <- readRDS("matrix_rf.rds")
+rf_bt <- readRDS("rf_best.rds")
+```
+
+### Wyniki
+
+#### Macierze konfuzji
+
+##### Macierz konfuzji boostingu
+
+```{r}
+matrix_boost 
+```
+
+##### Macierz konfuzji drzewa decyzyjnego
+
+```{r}
+matrix_dt 
+```
+
+##### Macierz konfuzji regresji logistycznej
+
+```{r}
+matrix_lr
+```
+
+##### Macierz konfuzji SVM
+
+```{r}
+matrix_svm
+```
+
+##### Macierz konfuzji lasu losowego
+
+```{r}
+matrix_rf
+```
+
+```{r}
+summ_boost <- summary(matrix_boost)
+summ_dt <- summary(matrix_dt)
+summ_lr <- summary(matrix_lr)
+summ_svm <- summary(matrix_svm)
+summ_rf <- summary(matrix_rf)
+#| label: tbl-metric
+#| tbl-cap: Metryki modeli 
+wyniki <- data.frame(summ_boost$.metric, round(summ_boost$.estimate, 4), 
+                     round(summ_dt$.estimate, 4),round(summ_lr$.estimate, 4),
+                     round(summ_svm$.estimate,4), round(summ_rf$.estimate,4))
+wyniki %>%
+  flextable() %>%
+  set_header_labels(values = c("Metryka", "Boosting", 
+                               "Drzewo decyzyjne", "Regresja logistyczna", 
+                               "SVM", "Las losowy")) %>%
+  theme_zebra()
+  
+
+```
+
+Biorąc pod uwagę wszystkie metryki, najlepiej wypadł las losowy, natomiast na podstawie zbalansowanej dokładności najlepsza okazała się regresja logistyczna.
